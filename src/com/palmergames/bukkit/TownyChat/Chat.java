@@ -10,6 +10,7 @@ import com.palmergames.bukkit.TownyChat.config.ChatSettings;
 import com.palmergames.bukkit.TownyChat.config.ChannelsSettings;
 import com.palmergames.bukkit.TownyChat.listener.EssentialsDiscordHookListener;
 import com.palmergames.bukkit.TownyChat.listener.TownyChatPlayerListener;
+import com.palmergames.bukkit.TownyChat.listener.ChatClipboardListener;
 import com.palmergames.bukkit.TownyChat.tasks.onLoadedTask;
 import com.palmergames.bukkit.TownyChat.util.EssentialsIntegration;
 import com.palmergames.bukkit.TownyChat.util.PAPIPlaceholderExpansion;
@@ -191,8 +192,10 @@ public class Chat extends JavaPlugin {
 		if (TownyPlayerListener == null) {
 			TownyPlayerListener = new TownyChatPlayerListener(this);
 	
-			if (TownyPlayerListener != null)
+			if (TownyPlayerListener != null) {
 				pm.registerEvents(TownyPlayerListener, this);
+				registerClipboardListener();
+			}
 		}
 
 		if (usingEssentialsDiscord) {
@@ -200,6 +203,16 @@ public class Chat extends JavaPlugin {
 		}
 	}
 	
+	private void registerClipboardListener() {
+		try {
+			Class.forName("io.papermc.paper.event.player.AsyncChatEvent");
+		} catch (ClassNotFoundException error) {
+			getLogger().info("Chat clipboard support is unavailable; Paper chat API is required");
+			return;
+		}
+		pm.registerEvents(new ChatClipboardListener(), this);
+	}
+
 	public void registerPermissions() {
 		// Register all Permissions.
 		for (String perm : getChannelsHandler().getAllPermissions()) {

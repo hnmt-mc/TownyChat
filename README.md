@@ -202,3 +202,32 @@ If you would like to build TownyChat yourself, you can do so with [Apache Maven]
 5. Run `mvn clean package`
    * Maven will generate the plugin inside the `TownyChat/target/` directory.
 6. Copy the JAR file to a server for testing.
+
+
+## hnmt fork: click-to-copy chat
+
+On Paper, including Folia, clicking a chat line copies its full displayed text,
+including the player name and channel label, to the clipboard. The copied text
+contains no color codes. Open the chat screen, click a line, and paste it into a
+text field.
+
+Channel formatting, colors, hover text, recipients, mute checks, and distance
+limits continue to use the existing chat handling. Existing click actions within
+a chat line are replaced with the clipboard action. Console output is unchanged.
+Notifications sent directly outside the chat event, such as spy notifications,
+are excluded. Spigot keeps its existing chat handling without clipboard support.
+
+Build and test with Java 21:
+
+```sh
+mvn clean verify
+```
+
+The resulting plugin is `target/TownyChat-0.122.jar`. Replace the existing
+TownyChat JAR on a server with Towny installed and restart the server. If another
+plugin provides a custom chat renderer, check that it does not replace the
+renderer after TownyChat adds the clipboard action.
+
+The upstream license is [CC BY-NC-ND 3.0](https://creativecommons.org/licenses/by-nc-nd/3.0/).
+Confirm the author's permission before publishing or distributing modified code
+or JAR files.
