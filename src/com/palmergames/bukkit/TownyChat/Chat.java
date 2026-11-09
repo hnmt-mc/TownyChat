@@ -18,6 +18,7 @@ import com.palmergames.bukkit.TownyChat.util.HnmtScheduler;
 import com.palmergames.bukkit.TownyChat.util.PAPIPlaceholderExpansion;
 
 import org.bukkit.Bukkit;
+import org.bukkit.event.HandlerList;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandMap;
 import org.bukkit.entity.Player;
@@ -157,6 +158,9 @@ public class Chat extends JavaPlugin {
 
 	@Override
 	public void onDisable() {
+		if (pm != null) {
+			HandlerList.unregisterAll(this);
+		}
 		unregisterPermissions();
 
 		dynMap = null;

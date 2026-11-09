@@ -73,18 +73,24 @@ public final class StandaloneChat implements Listener {
 
 		String format = config.getString("format", DEFAULT_FORMAT);
 		String exclamation = config.getString("exclamation-format", DEFAULT_EXCLAMATION_FORMAT);
-		EventPriority priority = parsePriority(config.getString("listener-priority", "LOW"));
+		EventPriority priority = parsePriority(plugin, config.getString("listener-priority", "LOW"));
 		boolean showOnJoin = config.getBoolean("show-channel-on-join", true);
 		plugin.registerStandalone(new StandaloneChat(plugin, format, exclamation, priority, showOnJoin));
 		return true;
 	}
 
-	private static EventPriority parsePriority(String raw) {
+	private static EventPriority parsePriority(Chat plugin, String raw) {
 		if (raw == null)
 			return EventPriority.LOW;
+		String normalized = raw.trim().toUpperCase();
+		if (normalized.equals("MONITOR")) {
+			plugin.getLogger().warning("listener-priority に MONITOR は指定できません。LOW を使います。");
+			return EventPriority.LOW;
+		}
 		try {
-			return EventPriority.valueOf(raw.trim().toUpperCase());
+			return EventPriority.valueOf(normalized);
 		} catch (IllegalArgumentException e) {
+			plugin.getLogger().warning("listener-priority の値 '" + raw + "' は無効です。LOW を使います。");
 			return EventPriority.LOW;
 		}
 	}
@@ -149,14 +155,25 @@ public final class StandaloneChat implements Listener {
 
 		boolean forceGlobal = message.startsWith("!");
 		if (forceGlobal) {
-			event.setMessage(message.substring(1));
-			message = event.getMessage();
+			String withoutPrefix = message.substring(1);
+			if (withoutPrefix.isBlank()) {
+				forceGlobal = false;
+			} else {
+				event.setMessage(withoutPrefix);
+				message = event.getMessage();
+			}
 		}
 
 		Map<String, String> values = buildValues(player, message);
 		String template = forceGlobal ? exclamationFormat : format;
 		String parsed = Chat.usingPlaceholderAPI ? PlaceholderAPI.setPlaceholders(player, template) : template;
 		event.setFormat(ChatColor.translateAlternateColorCodes('&', StandaloneFormat.apply(parsed, values)));
+	}
+
+	private static String placeholderOrEmpty(String value) {
+		if (value == null || value.matches(".*%[a-zA-Z0-9_-]+%.*"))
+			return "";
+		return value;
 	}
 
 	private Map<String, String> buildValues(Player player, String message) {
@@ -166,8 +183,8 @@ public final class StandaloneChat implements Listener {
 		values.put("worldname", player.getWorld().getName());
 		values.put("msg", message);
 		if (Chat.usingPlaceholderAPI) {
-			values.put("permprefix", PlaceholderAPI.setPlaceholders(player, "%luckperms_prefix%"));
-			values.put("group", PlaceholderAPI.setPlaceholders(player, "%luckperms_primary_group_name%"));
+			values.put("permprefix", placeholderOrEmpty(PlaceholderAPI.setPlaceholders(player, "%luckperms_prefix%")));
+			values.put("group", placeholderOrEmpty(PlaceholderAPI.setPlaceholders(player, "%luckperms_primary_group_name%")));
 		} else {
 			values.put("permprefix", "");
 			values.put("group", "");

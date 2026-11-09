@@ -42,6 +42,12 @@ class StandaloneFormatTest {
 	}
 
 	@Test
+	void removesExplicitThirdPlaceholder() {
+		String out = StandaloneFormat.apply("%1$s %3$s %2$s", Map.of());
+		assertEquals("%1$s  %2$s", out);
+	}
+
+	@Test
 	void listsTagsForValidation() {
 		assertTrue(StandaloneFormat.tags("{playername} {msg} {town}")
 			.containsAll(java.util.Set.of("playername", "msg", "town")));
