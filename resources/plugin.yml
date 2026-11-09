@@ -6,8 +6,7 @@ authors: [ElgarL, Shade, phrstbrn, LlmDl]
 website: http://towny.palmergames.com/towny/townychat/
 description: >
     TownyChat plugin which hooks into Towny.
-depend: [Towny]
-softdepend: [CraftIRC, PlaceholderAPI, dynmap, EssentialsDiscord]
+softdepend: [Towny, CraftIRC, PlaceholderAPI, dynmap, EssentialsDiscord, Essentials]
 folia-supported: true
 
 ############################################################

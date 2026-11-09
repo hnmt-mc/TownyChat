@@ -1,25 +1,21 @@
 package com.palmergames.bukkit.TownyChat;
 
-import com.earth2me.essentials.Essentials;
 import com.palmergames.bukkit.TownyChat.Command.ChannelCommand;
 import com.palmergames.bukkit.TownyChat.Command.TownyChatCommand;
 import com.palmergames.bukkit.TownyChat.Command.commandobjects.ChannelJoinAliasCommand;
 import com.palmergames.bukkit.TownyChat.channels.Channel;
 import com.palmergames.bukkit.TownyChat.channels.ChannelsHolder;
+import com.palmergames.bukkit.TownyChat.command.StandaloneCommand;
 import com.palmergames.bukkit.TownyChat.config.ChatSettings;
 import com.palmergames.bukkit.TownyChat.config.ChannelsSettings;
 import com.palmergames.bukkit.TownyChat.listener.EssentialsDiscordHookListener;
 import com.palmergames.bukkit.TownyChat.listener.TownyChatPlayerListener;
 import com.palmergames.bukkit.TownyChat.listener.ChatClipboardListener;
+import com.palmergames.bukkit.TownyChat.standalone.StandaloneChat;
 import com.palmergames.bukkit.TownyChat.tasks.onLoadedTask;
 import com.palmergames.bukkit.TownyChat.util.EssentialsIntegration;
+import com.palmergames.bukkit.TownyChat.util.HnmtScheduler;
 import com.palmergames.bukkit.TownyChat.util.PAPIPlaceholderExpansion;
-import com.palmergames.bukkit.towny.Towny;
-import com.palmergames.bukkit.towny.scheduling.TaskScheduler;
-import com.palmergames.bukkit.towny.scheduling.impl.BukkitTaskScheduler;
-import com.palmergames.bukkit.towny.scheduling.impl.FoliaTaskScheduler;
-import com.palmergames.util.FileMgmt;
-import com.palmergames.util.JavaUtil;
 
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
@@ -29,10 +25,10 @@ import org.bukkit.permissions.Permission;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.dynmap.DynmapAPI;
 
 import java.io.File;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -42,6 +38,9 @@ import java.util.concurrent.ConcurrentMap;
 
 /**
  * Reference Chat Plugin for Towny
+ * <p>
+ * Towny が無いサーバーでも起動できる。その場合は全体チャットだけを扱う
+ * （{@link StandaloneChat}）。
  *
  * @link <a href="https://townyadvanced.github.io">TownyAdvanced</a>
  * @link <a href="https://github.com/TownyAdvanced/TownyChat">Source Code (GitHub)</a>
@@ -54,15 +53,16 @@ public class Chat extends JavaPlugin {
 
 	private TownyChatPlayerListener TownyPlayerListener;
 	private ChannelsHolder channels;
-	
+
 	protected PluginManager pm;
 	private static Chat chat = null;
-	private final Object scheduler;
-	private Towny towny = null;
-	private DynmapAPI dynMap = null;
-	private Essentials essentials = null;
-	private PAPIPlaceholderExpansion papiexpansion;
-	
+	private final HnmtScheduler scheduler;
+	private Plugin townyPlugin = null;
+	private Object dynMap = null;
+	private Object essentials = null;
+	private Object papiexpansion;
+	private StandaloneChat standalone = null;
+
 	private static final String requiredTownyVersion = "0.103.0.0";
 	public static boolean usingPlaceholderAPI = false;
 	public static boolean usingEssentialsDiscord = false;
@@ -72,40 +72,56 @@ public class Chat extends JavaPlugin {
 
 	public Chat() {
 		chat = this;
-		this.scheduler = townyVersionCheck() ? isFoliaClassPresent() ? new FoliaTaskScheduler(this) : new BukkitTaskScheduler(this) : null;
+		this.scheduler = new HnmtScheduler(this);
 	}
 
 	@Override
 	public void onEnable() {
 		pm = getServer().getPluginManager();
-		channels = new ChannelsHolder(this);
 		playerChannelMap = new ConcurrentHashMap<>();
-		
+
 		checkPlugins();
-		if (towny == null || !townyVersionCheck()) {
-			disableWithMessage("Towny version does not meet required minimum version: " + requiredTownyVersion.toString());
+		if (townyPlugin != null && !townyVersionCheck()) {
+			disableWithMessage("Towny version does not meet required minimum version: " + requiredTownyVersion);
 			return;
-		} else {
-			getLogger().info("Towny version " + towny.getPluginMeta().getVersion() + " found.");
 		}
-		
+		if (hasTowny()) {
+			getLogger().info("Towny version " + townyPlugin.getPluginMeta().getVersion() + " found.");
+		}
+
 		loadConfigs();
 		if (channelsConfigError || chatConfigError) {
 			disableWithMessage("The config could not be loaded.");
 			return;
 		}
-		
+
 		/*
 		 * This executes the task with a 1 tick delay avoiding the bukkit depends bug.
 		 * TODO: What bug is this referencing? This goes back to the first version of TownyChat.
 		 */
-		getScheduler().run(new onLoadedTask(this));
-
-		getCommand("townychat").setExecutor(new TownyChatCommand(this));
-		getCommand("channel").setExecutor(new ChannelCommand(this));
-		registerObjectCommands();
+		getScheduler().run(() -> startChat());
 	}
-	
+
+	/**
+	 * 1 tick 後に、Towny の有無に合わせて機能を有効にする。
+	 */
+	private void startChat() {
+		if (hasTowny()) {
+			new onLoadedTask(this).run();
+			getCommand("townychat").setExecutor(new TownyChatCommand(this));
+			getCommand("channel").setExecutor(new ChannelCommand(this));
+			registerObjectCommands();
+			return;
+		}
+
+		StandaloneCommand command = new StandaloneCommand(this);
+		getCommand("townychat").setExecutor(command);
+		getCommand("channel").setExecutor(command);
+		if (standalone != null) {
+			standalone.enable();
+		}
+	}
+
 	private void disableWithMessage(String message) {
 		getLogger().severe(message);
 		getLogger().severe("Disabling TownyChat...");
@@ -114,16 +130,25 @@ public class Chat extends JavaPlugin {
 
 	private boolean townyVersionCheck() {
 		try {
-			return Towny.isTownyVersionSupported(requiredTownyVersion);
-		} catch (NoSuchMethodError e) {
+			Class<?> towny = Class.forName("com.palmergames.bukkit.towny.Towny");
+			Method method = towny.getMethod("isTownyVersionSupported", String.class);
+			return (boolean) method.invoke(null, requiredTownyVersion);
+		} catch (ReflectiveOperationException | LinkageError e) {
 			return false;
 		}
 	}
 
 	private void loadConfigs() {
-		FileMgmt.checkOrCreateFolders(new String[] { getRootPath(), getTownySettingsPath() });
-		chatConfigError = !ChatSettings.loadCommentedChatConfig();
-		channelsConfigError = !ChannelsSettings.loadCommentedChannelsConfig();
+		File root = hasTowny() ? townyPlugin.getDataFolder() : getDataFolder();
+		new File(root, "settings").mkdirs();
+		if (hasTowny()) {
+			chatConfigError = !ChatSettings.loadCommentedChatConfig();
+			channelsConfigError = !ChannelsSettings.loadCommentedChannelsConfig();
+			channels = new ChannelsHolder(this);
+		} else {
+			chatConfigError = !StandaloneChat.load(this);
+			channels = new ChannelsHolder(this);
+		}
 	}
 
 	public static Chat getTownyChat() {
@@ -133,16 +158,16 @@ public class Chat extends JavaPlugin {
 	@Override
 	public void onDisable() {
 		unregisterPermissions();
-		// reset any handles
 
 		dynMap = null;
-		towny = null;
+		townyPlugin = null;
 		pm = null;
-		
+
 		channels = null;
 		playerChannelMap = null;
+		standalone = null;
 	}
-	
+
 	/**
 	 * Perform a reload of this plugin.
 	 */
@@ -158,21 +183,21 @@ public class Chat extends JavaPlugin {
 		Plugin test;
 
 		test = pm.getPlugin("Towny");
-		if (test != null && test instanceof Towny)
-			towny = (Towny) test;
+		if (test != null)
+			townyPlugin = test;
 
 		test = pm.getPlugin("dynmap");
-		if (test != null && pm.getPlugin("dynmap").isEnabled()) {
-			dynMap = (DynmapAPI) test;
+		if (test != null && test.isEnabled()) {
+			dynMap = test;
 		}
-		
+
 		test = pm.getPlugin("PlaceholderAPI");
 		if (test != null) {
 			if (papiexpansion != null)
-				papiexpansion.unregister();
-		    usingPlaceholderAPI = true;
-		    papiexpansion = new PAPIPlaceholderExpansion(this);
-		    papiexpansion.register();
+				((PAPIPlaceholderExpansion) papiexpansion).unregister();
+			usingPlaceholderAPI = true;
+			papiexpansion = new PAPIPlaceholderExpansion(this);
+			((PAPIPlaceholderExpansion) papiexpansion).register();
 		}
 
 		test = pm.getPlugin("EssentialsDiscord");
@@ -181,17 +206,15 @@ public class Chat extends JavaPlugin {
 		}
 
 		test = pm.getPlugin("Essentials");
-		if (test != null && JavaUtil.classExists("com.earth2me.essentials.Essentials")) {
-			this.essentials = (Essentials) test;
-		}
-
+		if (test != null)
+			essentials = test;
 	}
 
 	public void registerEvents() {
-		
+
 		if (TownyPlayerListener == null) {
 			TownyPlayerListener = new TownyChatPlayerListener(this);
-	
+
 			if (TownyPlayerListener != null) {
 				pm.registerEvents(TownyPlayerListener, this);
 				registerClipboardListener();
@@ -202,8 +225,8 @@ public class Chat extends JavaPlugin {
 			pm.registerEvents(new EssentialsDiscordHookListener(this), this);
 		}
 	}
-	
-	private void registerClipboardListener() {
+
+	public void registerClipboardListener() {
 		try {
 			Class.forName("io.papermc.paper.event.player.AsyncChatEvent");
 		} catch (ClassNotFoundException error) {
@@ -223,17 +246,17 @@ public class Chat extends JavaPlugin {
 			}
 		}
 	}
-	
+
 	public void unregisterPermissions() {
-		// Register all Permissions.
+		if (channels == null || pm == null)
+			return;
 		for (String perm : getChannelsHandler().getAllPermissions()) {
 			pm.removePermission(new Permission(perm, new HashMap<String, Boolean>()));
 		}
 	}
-	
-	
+
 	public String getRootPath() {
-		return getTowny().getDataFolder().getPath();
+		return (hasTowny() ? townyPlugin : this).getDataFolder().getPath();
 	}
 
 	public String getTownySettingsPath() {
@@ -243,7 +266,7 @@ public class Chat extends JavaPlugin {
 	public String getChatConfigPath() {
 		return getTownySettingsPath() + File.separator + "ChatConfig.yml";
 	}
-	
+
 	public String getChannelsConfigPath() {
 		return getTownySettingsPath() + File.separator + "Channels.yml";
 	}
@@ -255,11 +278,21 @@ public class Chat extends JavaPlugin {
 		return channels;
 	}
 
-	public Towny getTowny() {
-		return towny;
+	/**
+	 * Towny が入っていれば、そのプラグインを返す。
+	 */
+	public Plugin getTowny() {
+		return townyPlugin;
 	}
 
-	public DynmapAPI getDynmap() {
+	/**
+	 * このサーバーに Towny が入っているかを返す。
+	 */
+	public boolean hasTowny() {
+		return townyPlugin != null;
+	}
+
+	public Object getDynmap() {
 		return dynMap;
 	}
 
@@ -267,7 +300,7 @@ public class Chat extends JavaPlugin {
 		return essentials != null;
 	}
 
-	public Essentials getEssentials() {
+	public Object getEssentials() {
 		return essentials;
 	}
 
@@ -307,25 +340,23 @@ public class Chat extends JavaPlugin {
 	public TownyChatPlayerListener getTownyPlayerListener() {
 		return TownyPlayerListener;
 	}
-	
+
 	public Channel getPlayerChannel(Player player) {
 		return playerChannelMap.get(player.getUniqueId());
 	}
-	
+
 	public void setPlayerChannel(Player player, Channel channel) {
 		playerChannelMap.put(player.getUniqueId(), channel);
 	}
 
-	public TaskScheduler getScheduler() {
-		return (TaskScheduler) this.scheduler;
+	public HnmtScheduler getScheduler() {
+		return scheduler;
 	}
 
-	private static boolean isFoliaClassPresent() {
-		try {
-			Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
-			return true;
-		} catch (ClassNotFoundException e) {
-			return false;
-		}
+	/**
+	 * スタンドアロン用のチャット処理を覚えておく。
+	 */
+	public void registerStandalone(StandaloneChat standalone) {
+		this.standalone = standalone;
 	}
 }
