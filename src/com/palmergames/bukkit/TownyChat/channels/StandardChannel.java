@@ -336,7 +336,7 @@ public class StandardChannel extends Channel {
 	private Set<Player> getSpies() {
 		// Compile the list of recipients with spy perms
 		return plugin.getServer().getOnlinePlayers().stream()
-				.filter(p -> plugin.getTowny().hasPlayerMode(p, "spy"))
+				.filter(p -> ((com.palmergames.bukkit.towny.Towny) plugin.getTowny()).hasPlayerMode(p, "spy"))
 				.collect(Collectors.toSet());
 	}
 
@@ -394,7 +394,7 @@ public class StandardChannel extends Channel {
 	private void tryPostToDynmap(Player player, String message) {
 		if (super.getRange() > 0)
 			return;
-		DynmapAPI dynMap = plugin.getDynmap();
+		DynmapAPI dynMap = (DynmapAPI) plugin.getDynmap();
 		if (dynMap != null)
 			dynMap.postPlayerMessageToWeb(player, message);
 	}

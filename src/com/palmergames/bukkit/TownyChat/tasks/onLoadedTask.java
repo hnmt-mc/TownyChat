@@ -18,7 +18,7 @@ public class onLoadedTask implements Runnable {
 	public onLoadedTask(Chat plugin) {
         super();
         this.plugin = plugin;
-        this.towny = plugin.getTowny();
+        this.towny = (Towny) plugin.getTowny();
 	}
 	
 	@Override
