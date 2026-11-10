@@ -18,13 +18,11 @@ import java.util.List;
 public class TownyChatCommand extends BaseCommand implements CommandExecutor {
 
 	private Chat plugin;
-	private static final List<String> townychat_help = new ArrayList<String>();
-
-	static {
-
-		townychat_help.add(ChatTools.formatTitle("/townychat"));
-		//TODO: Add lang strings for description!
-		townychat_help.add(ChatTools.formatCommand("", "/townychat", "reload", ""));
+	private static List<String> helpLines(CommandSender sender) {
+		List<String> lines = new ArrayList<String>();
+		lines.add(ChatTools.formatTitle("/townychat"));
+		lines.add(ChatTools.formatCommand("", "/townychat", "reload", com.palmergames.bukkit.towny.object.Translatable.of("tc_help_townychat_reload").forLocale(sender)));
+		return lines;
 	}
 
 	public TownyChatCommand(Chat instance) {
@@ -44,7 +42,7 @@ public class TownyChatCommand extends BaseCommand implements CommandExecutor {
 
 	private void parseTownyChatCommand(CommandSender sender, String[] split) {
 		if (split.length == 0 || split[0].equalsIgnoreCase("help") || split[0].equalsIgnoreCase("?")) {
-			for (String line : townychat_help) {
+			for (String line : helpLines(sender)) {
 				TownyMessaging.sendMessage(sender, line);
 			}
 		} else if (split[0].equalsIgnoreCase("reload")) {
