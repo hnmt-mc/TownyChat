@@ -21,7 +21,6 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -172,15 +171,8 @@ public class ChannelCommand extends BaseCommand implements CommandExecutor {
 		String players = "";
 
 		if (chan.hasMuteList()) {
-			Iterator<String> iter = chan.getMuteList().iterator();
-			boolean first = true;
-			while (iter.hasNext()) {
-				if (!first) {
-					players += Colors.Green + ", " + Colors.White;
-				}
-				players += iter.next();
-				count++;
-			}
+			count = chan.getMuteList().size();
+			players = com.palmergames.bukkit.TownyChat.util.MuteListFormat.join(chan.getMuteList(), Colors.Green + ", " + Colors.White);
 		}
 
 		if (count == 0) {
